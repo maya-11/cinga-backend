@@ -1,0 +1,10 @@
+{
+    "git.ignoreLimitWarning": true,
+    "git.showIgnoredFiles": false,
+    "files.exclude": {
+        "**/node_modules": true,
+        "**/.git": true,
+        "**/.DS_Store": true,
+        "**/Thumbs.db": true
+    }
+}

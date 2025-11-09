@@ -1,53 +1,54 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../config/db');
+const User = require('../models/User');
+const { authenticateToken } = require('../middleware/authMiddleware');
 
-// Create or update user from Firebase
-router.post('/sync-firebase-user', (req, res) => {
-  const { firebase_uid, email, name, role } = req.body;
-  
-  const query = `
-    INSERT INTO users (firebase_uid, email, name, role) 
-    VALUES (?, ?, ?, ?)
-    ON DUPLICATE KEY UPDATE 
-    email = VALUES(email), 
-    name = VALUES(name), 
-    role = VALUES(role)
-  `;
-  
-  db.query(query, [firebase_uid, email, name, role], (err, results) => {
-    if (err) {
-      console.error('Database error:', err);
-      return res.status(500).json({ error: 'Failed to sync user' });
-    }
-    
-    // Get the user data
-    db.query('SELECT * FROM users WHERE firebase_uid = ?', [firebase_uid], (err, userResults) => {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to fetch user' });
-      }
-      res.json(userResults[0]);
-    });
-  });
-});
+// Get user profile
+router.get('/:userId', authenticateToken, (req, res) => {
+  const { userId } = req.params;
 
-// Get user by Firebase UID
-router.get('/firebase/:firebaseUid', (req, res) => {
-  const { firebaseUid } = req.params;
-  
-  const query = 'SELECT * FROM users WHERE firebase_uid = ?';
-  
-  db.query(query, [firebaseUid], (err, results) => {
+  User.findById(userId, (err, results) => {
     if (err) {
       console.error('Database error:', err);
       return res.status(500).json({ error: 'Failed to fetch user' });
     }
-    
+
     if (results.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
+
+    // Remove sensitive data
+    const user = results[0];
+    delete user.created_at;
     
-    res.json(results[0]);
+    res.json(user);
+  });
+});
+
+// Get all clients (for manager to assign projects)
+router.get('/role/clients', authenticateToken, (req, res) => {
+  User.getClients((err, results) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ error: 'Failed to fetch clients' });
+    }
+    res.json(results);
+  });
+});
+
+// Update user profile
+router.patch('/:userId', authenticateToken, (req, res) => {
+  const { userId } = req.params;
+  const { name } = req.body;
+
+  const query = 'UPDATE users SET name = ? WHERE id = ?';
+  
+  db.query(query, [name, userId], (err, results) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ error: 'Failed to update user' });
+    }
+    res.json({ message: 'User updated successfully' });
   });
 });
 
