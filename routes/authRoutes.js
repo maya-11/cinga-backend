@@ -1,72 +1,56 @@
 const express = require('express');
 const router = express.Router();
 const admin = require('../config/firebase-admin');
-const User = require('../models/User');
+const pool = require('../config/db');
 
 // Login/Register user
 router.post('/login', async (req, res) => {
   try {
     const { token } = req.body;
-    
+
     // Verify Firebase token
     const decodedToken = await admin.auth().verifyIdToken(token);
     const { uid, email, name } = decodedToken;
 
-    // Check if user exists in our database
-    User.findById(uid, (err, results) => {
-      if (err) {
-        console.error('Database error:', err);
-        return res.status(500).json({ error: 'Database error' });
-      }
+    // Check if user exists in database
+    const [rows] = await pool.promise().query(
+      'SELECT * FROM users WHERE firebase_uid = ?',
+      [uid]
+    );
 
-      let user = results[0];
+    let user;
+    let isNewUser = false;
 
-      // If user doesn't exist, create them
-      if (!user) {
-        const role = email.includes('manager') ? 'manager' : 'client';
-        const userData = {
-          id: uid,
-          email,
-          name: name || email.split('@')[0],
-          role
-        };
+    if (!rows.length) {
+      // User doesn't exist → create in DB
+      const role = email.includes('manager') ? 'manager' : 'client';
+      const [result] = await pool.promise().query(
+        'INSERT INTO users (name, email, role, firebase_uid) VALUES (?, ?, ?, ?)',
+        [name || email.split('@')[0], email, role, uid]
+      );
 
-        User.create(userData, (err, results) => {
-          if (err) {
-            console.error('Database error:', err);
-            return res.status(500).json({ error: 'Failed to create user' });
-          }
+      user = {
+        id: result.insertId, // numeric DB ID
+        email,
+        name: name || email.split('@')[0],
+        role
+      };
+      isNewUser = true;
+    } else {
+      // User exists
+      user = {
+        id: rows[0].id,
+        email: rows[0].email,
+        name: rows[0].name,
+        role: rows[0].role
+      };
+    }
 
-          // Return the new user
-          res.json({
-            user: {
-              id: userData.id,
-              email: userData.email,
-              name: userData.name,
-              role: userData.role
-            },
-            isNewUser: true
-          });
-        });
-      } else {
-        // Return existing user
-        res.json({
-          user: {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            role: user.role
-          },
-          isNewUser: false
-        });
-      }
-    });
+    res.json({ user, isNewUser });
 
   } catch (error) {
     console.error('Auth error:', error);
-    res.status(401).json({ 
-      error: 'Authentication failed. Invalid token.' 
-    });
+    res.status(401).json({ error: 'Authentication failed. Invalid token.' });
   }
 });
 

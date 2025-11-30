@@ -1,26 +1,53 @@
-const db = require('../config/db');
+const db = require('../config/db'); 
 
-class User {
-  static create(userData, callback) {
-    const query = 'INSERT INTO users (id, email, name, role) VALUES (?, ?, ?, ?)';
-    const values = [userData.id, userData.email, userData.name, userData.role];
-    db.query(query, values, callback);
-  }
-
-  static findById(id, callback) {
+const User = {
+  // Find user by ID
+  findById: (userId, callback) => {
     const query = 'SELECT * FROM users WHERE id = ?';
-    db.query(query, [id], callback);
-  }
+    db.query(query, [userId], callback);
+  },
 
-  static findByEmail(email, callback) {
-    const query = 'SELECT * FROM users WHERE email = ?';
-    db.query(query, [email], callback);
-  }
+  // Find user by Firebase UID
+  findByFirebaseUid: (firebase_uid, callback) => {
+    const query = 'SELECT * FROM users WHERE firebase_uid = ?';
+    db.query(query, [firebase_uid], callback);
+  },
 
-  static getClients(callback) {
-    const query = 'SELECT id, name, email FROM users WHERE role = "client"';
+  // Get all clients
+  getClients: (callback) => {
+    const query = 'SELECT * FROM users WHERE role = "client"';
     db.query(query, callback);
+  },
+
+  // Get all managers  
+  getManagers: (callback) => {
+    const query = 'SELECT * FROM users WHERE role = "manager"';
+    db.query(query, callback);
+  },
+
+  // Get all users
+  getAll: (callback) => {
+    const query = 'SELECT * FROM users';
+    db.query(query, callback);
+  },
+
+  // Create user
+  create: (userData, callback) => {
+    const query = 'INSERT INTO users (firebase_uid, email, name, role) VALUES (?, ?, ?, ?)';
+    db.query(query, [userData.firebase_uid, userData.email, userData.name, userData.role], callback);
+  },
+
+  // Update user profile
+  updateProfile: (userId, name, callback) => {
+    const query = 'UPDATE users SET name = ? WHERE id = ?';
+    db.query(query, [name, userId], callback);
+  },
+
+  // Ensure manager exists in database (for Firebase users)
+  ensureManagerExists: (firebase_uid, userData, callback) => {
+    const query = 'INSERT INTO users (firebase_uid, email, name, role) VALUES (?, ?, ?, "manager") ON DUPLICATE KEY UPDATE email = ?, name = ?';
+    db.query(query, [firebase_uid, userData.email, userData.name, userData.email, userData.name], callback);
   }
-}
+};
 
 module.exports = User;

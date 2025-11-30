@@ -1,59 +1,31 @@
+// routes/taskRoutes.js - COMPLETELY FIXED
 const express = require('express');
 const router = express.Router();
-const Task = require('../models/Task');
+const taskController = require('../controllers/taskController');
 const { authenticateToken } = require('../middleware/authMiddleware');
 
 // Get all tasks for a project
-router.get('/project/:projectId', authenticateToken, (req, res) => {
-  const { projectId } = req.params;
+router.get('/project/:projectId', authenticateToken, taskController.getProjectTasks);
 
-  Task.getByProject(projectId, (err, results) => {
-    if (err) {
-      console.error('Database error:', err);
-      return res.status(500).json({ error: 'Failed to fetch tasks' });
-    }
-    res.json(results);
-  });
-});
+// Get single task by ID
+router.get('/:taskId', authenticateToken, taskController.getTaskById);
+
+// Get all tasks for a manager
+router.get('/manager/:managerId/tasks', authenticateToken, taskController.getManagerTasks);
 
 // Create new task
-router.post('/', authenticateToken, (req, res) => {
-  const taskData = req.body;
-
-  Task.create(taskData, (err, results) => {
-    if (err) {
-      console.error('Database error:', err);
-      return res.status(500).json({ error: 'Failed to create task' });
-    }
-    res.json({ message: 'Task created successfully', taskId: taskData.id });
-  });
-});
+router.post('/', authenticateToken, taskController.createTask);
 
 // Update task status
-router.patch('/:taskId/status', authenticateToken, (req, res) => {
-  const { taskId } = req.params;
-  const { status } = req.body;
+router.patch('/:taskId/status', authenticateToken, taskController.updateTaskStatus);
 
-  Task.updateStatus(taskId, status, (err, results) => {
-    if (err) {
-      console.error('Database error:', err);
-      return res.status(500).json({ error: 'Failed to update task' });
-    }
-    res.json({ message: 'Task status updated successfully' });
-  });
-});
+// Update task (full update)
+router.put('/:taskId', authenticateToken, taskController.updateTask);
 
-// Get overdue tasks for manager
-router.get('/manager/:managerId/overdue', authenticateToken, (req, res) => {
-  const { managerId } = req.params;
+// CLIENT: Update task status with notes
+router.patch('/:taskId/client-update', authenticateToken, taskController.updateTaskStatusAndNotes);
 
-  Task.getOverdueTasks(managerId, (err, results) => {
-    if (err) {
-      console.error('Database error:', err);
-      return res.status(500).json({ error: 'Failed to fetch overdue tasks' });
-    }
-    res.json(results);
-  });
-});
+// Delete task
+router.delete('/:taskId', authenticateToken, taskController.deleteTask);
 
 module.exports = router;

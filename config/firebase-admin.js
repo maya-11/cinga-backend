@@ -8,9 +8,9 @@ const mockFirebaseAdmin = {
       
       // Mock user verification - always return success for testing
       return Promise.resolve({
-        uid: 'mock-user-' + Date.now(),
-        email: 'test@cinga.com',
-        name: 'Test User'
+        uid: '6ZCfMwMeJvMwnMeUErsc6dwdQ993', // FIXED: Changed 'firebase_uid' to 'uid'
+        email: 'manager@cinga.com',
+        name: 'Cinga Project Manager'
       });
     }
   })

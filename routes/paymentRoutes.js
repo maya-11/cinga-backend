@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Payment = require('../models/Payment');
 const { authenticateToken } = require('../middleware/authMiddleware');
-
+const db = require('../config/db');
 // Get all payments for a project
 router.get('/project/:projectId', authenticateToken, (req, res) => {
   const { projectId } = req.params;

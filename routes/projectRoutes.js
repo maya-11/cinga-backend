@@ -1,197 +1,78 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const Project = require('../models/Project');
-const MockTrelloService = require('../services/mockTrelloService'); // Use mock instead of real
+const User = require('../models/User');
 const { authenticateToken } = require('../middleware/authMiddleware');
+const db = require('../config/db');
+const projectController = require('../controllers/projectController');
 
-// Create new project with mock Trello board
-router.post('/', authenticateToken, async (req, res) => {
-  const projectData = req.body;
-
-  try {
-    console.log('🚀 Creating project with mock Trello integration...');
-    
-    // Create mock Trello board for the project
-    const trelloResult = await MockTrelloService.createProjectBoard(
-      projectData.name, 
-      projectData.description
-    );
-
-    if (trelloResult.success) {
-      projectData.trello_board_id = trelloResult.boardId;
-      console.log('✅ Mock Trello board assigned:', trelloResult.boardId);
-    }
-
-    // Create project in database
-    Project.create(projectData, (err, results) => {
-      if (err) {
-        console.error('Database error:', err);
-        return res.status(500).json({ error: 'Failed to create project' });
-      }
-
-      res.json({ 
-        message: 'Project created successfully', 
-        projectId: projectData.id,
-        trelloBoard: trelloResult.success ? {
-          boardId: trelloResult.boardId,
-          boardUrl: trelloResult.boardUrl,
-          mock: true, // Indicate this is mock data
-          message: 'Trello integration is running in mock mode'
-        } : null
-      });
-    });
-
-  } catch (error) {
-    console.error('Project creation error:', error);
-    res.status(500).json({ error: 'Failed to create project' });
-  }
-});
+// Create new project WITHOUT Trello
+router.post('/', authenticateToken, projectController.createProject);
 
 // Get all projects for a manager
-router.get('/manager/:managerId', authenticateToken, (req, res) => {
-  const { managerId } = req.params;
+router.get('/manager/:managerId', authenticateToken, projectController.getManagerProjects);
 
-  Project.getByManager(managerId, (err, results) => {
+// Get client projects using Firebase UID - USE CONTROLLER METHOD
+router.get('/client/:firebaseUid', authenticateToken, (req, res) => {
+  const { firebaseUid } = req.params;
+  console.log('🔍 Projects: Loading client projects for Firebase UID:', firebaseUid);
+  
+  // First, get the user ID from firebase_uid
+  User.findByFirebaseUid(firebaseUid, (err, userResults) => {
     if (err) {
-      console.error('Database error:', err);
-      return res.status(500).json({ error: 'Failed to fetch projects' });
+      console.error('❌ Database error in findByFirebaseUid:', err);
+      return res.status(500).json({ error: 'Failed to find user' });
     }
-    res.json(results);
+    
+    if (userResults.length === 0) {
+      console.log('❌ No user found with firebase_uid:', firebaseUid);
+      return res.status(404).json({ error: 'User not found in database' });
+    }
+    
+    const userId = userResults[0].id;
+    console.log('✅ Found user ID for projects:', userId);
+    
+    // ✅ USE THE CONTROLLER METHOD instead of calling model directly
+    // Create a mock request object for the controller
+    const mockReq = {
+      params: { clientId: userId },
+      user: req.user
+    };
+    
+    const mockRes = {
+      json: (data) => res.json(data),
+      status: (code) => ({
+        json: (data) => res.status(code).json(data)
+      })
+    };
+    
+    projectController.getClientProjects(mockReq, mockRes);
   });
 });
 
-// Get all projects for a client
-router.get('/client/:clientId', authenticateToken, (req, res) => {
-  const { clientId } = req.params;
-
-  Project.getByClient(clientId, (err, results) => {
-    if (err) {
-      console.error('Database error:', err);
-      return res.status(500).json({ error: 'Failed to fetch projects' });
-    }
-    res.json(results);
-  });
-});
+// Get all projects for a client using internal client ID
+router.get('/client/:clientId', authenticateToken, projectController.getClientProjects);
 
 // Get project details
-router.get('/:projectId', authenticateToken, (req, res) => {
-  const { projectId } = req.params;
+router.get('/:projectId', authenticateToken, projectController.getProjectById);
 
-  Project.findById(projectId, (err, results) => {
-    if (err) {
-      console.error('Database error:', err);
-      return res.status(500).json({ error: 'Failed to fetch project' });
-    }
+// 🆕 ADD: Update Project Route
+router.put('/:projectId/update', authenticateToken, projectController.updateProject);
 
-    if (results.length === 0) {
-      return res.status(404).json({ error: 'Project not found' });
-    }
-
-    res.json(results[0]);
-  });
-});
+// 🆕 ADD: Delete Project Route (Hard Delete)
+router.delete('/:projectId/delete', authenticateToken, projectController.deleteProject);
 
 // Update project completion percentage
-router.patch('/:projectId/completion', authenticateToken, (req, res) => {
-  const { projectId } = req.params;
-  const { completion_percentage } = req.body;
+router.patch('/:projectId/completion', authenticateToken, projectController.updateProjectCompletion);
 
-  Project.updateCompletion(projectId, completion_percentage, (err, result) => {
-    if (err) {
-      console.error('Database error:', err);
-      return res.status(500).json({ error: 'Failed to update project' });
-    }
-    res.json({ message: 'Project progress updated successfully' });
-  });
-});
+// CLIENT: Update project progress
+router.patch('/:projectId/progress', authenticateToken, projectController.updateProjectProgress);
 
-// Sync project progress with mock Trello
-router.post('/:projectId/sync-trello', authenticateToken, async (req, res) => {
-  const { projectId } = req.params;
-
-  console.log('🔄 Syncing project with mock Trello...');
-
-  // First get project to check if it has Trello board
-  Project.findById(projectId, async (err, results) => {
-    if (err) {
-      console.error('Database error:', err);
-      return res.status(500).json({ error: 'Failed to fetch project' });
-    }
-
-    if (results.length === 0) {
-      return res.status(404).json({ error: 'Project not found' });
-    }
-
-    const project = results[0];
-    
-    // If no Trello board, create one automatically
-    if (!project.trello_board_id) {
-      console.log('📋 No Trello board found, creating mock board...');
-      const trelloResult = await MockTrelloService.createProjectBoard(project.name, project.description);
-      
-      if (trelloResult.success) {
-        // Update project with new board ID
-        Project.updateTrelloBoardId(projectId, trelloResult.boardId, (err, updateResults) => {
-          if (err) {
-            console.error('Failed to update project with board ID:', err);
-          }
-        });
-      }
-    }
-
-    try {
-      const boardId = project.trello_board_id;
-      const syncResult = await MockTrelloService.syncProjectProgress(boardId);
-      
-      if (syncResult.success) {
-        // Update project completion percentage
-        Project.updateCompletion(projectId, syncResult.progress, (err, updateResults) => {
-          if (err) {
-            console.error('Database update error:', err);
-          }
-        });
-
-        console.log('✅ Mock Trello sync completed successfully');
-        
-        res.json({
-          success: true,
-          progress: syncResult.progress,
-          totalTasks: syncResult.totalTasks,
-          completedTasks: syncResult.completedTasks,
-          overdueTasks: syncResult.overdueTasks,
-          mock: true,
-          message: 'Trello sync running in mock mode'
-        });
-      } else {
-        res.status(500).json({ 
-          error: 'Failed to sync with mock Trello',
-          details: syncResult.error,
-          mock: true
-        });
-      }
-
-    } catch (error) {
-      console.error('Mock Trello sync error:', error);
-      res.status(500).json({ 
-        error: 'Failed to sync with mock Trello',
-        mock: true 
-      });
-    }
-  });
-});
+// MANAGER: Update project details
+router.put('/:projectId', authenticateToken, projectController.managerUpdateProject);
 
 // Get manager project statistics
-router.get('/manager/:managerId/stats', authenticateToken, (req, res) => {
-  const { managerId } = req.params;
-
-  Project.getManagerStats(managerId, (err, results) => {
-    if (err) {
-      console.error('Database error:', err);
-      return res.status(500).json({ error: 'Failed to fetch stats' });
-    }
-    res.json(results[0] || {});
-  });
-});
+router.get('/manager/:managerId/stats', authenticateToken, projectController.getManagerStats);
 
 // Update project status
 router.patch('/:projectId/status', authenticateToken, (req, res) => {
@@ -237,5 +118,9 @@ router.get('/', authenticateToken, (req, res) => {
   });
 });
 
+// ARCHIVE PROJECT ROUTES
+router.patch('/:projectId/archive', authenticateToken, projectController.archiveProject);
+router.patch('/:projectId/unarchive', authenticateToken, projectController.unarchiveProject);
+router.get('/manager/:managerId/archived', authenticateToken, projectController.getArchivedManagerProjects);
 
 module.exports = router;
